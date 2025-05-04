@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Code Whisper</title>
+  <link rel="stylesheet" href="js/vs/editor/editor.main.css">
+  <style>
+    body {
+      margin: 0;
+      background: linear-gradient(120deg, #232526, #414345);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #fff;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      padding: 1rem;
+      font-size: 2rem;
+      letter-spacing: 2px;
+      font-weight: bold;
+      background: rgba(20, 20, 40, 0.7);
+      backdrop-filter: blur(6px);
+      border-bottom: 2px solid #00ffe7;
+      box-shadow: 0 2px 8px #00ffe733;
+    }
+    .code-whisper-label {
+      margin-left: 1rem;
+      padding: 0.2em 0.8em;
+      background: linear-gradient(90deg, #00ffe7 40%, #007cf0 100%);
+      border-radius: 24px;
+      color: #232526;
+      font-weight: 600;
+      font-size: 1.2rem;
+      letter-spacing: 1px;
+      box-shadow: 0 2px 8px #00ffe799;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background: rgba(20, 20, 40, 0.7);
+      border-bottom: 1px solid #00ffe7;
+    }
+    #editor {
+      width: 100vw;
+      height: 55vh;
+      border-bottom: 2px solid #00ffe7;
+    }
+    #whisperBtn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000; /* Ensure it's above other content */
+    }
+
+    .output {
+      width: 100vw;
+      min-height: 20vh;
+      background: rgba(30, 30, 50, 0.8);
+      color: #00ffe7;
+      font-family: 'Fira Mono', monospace;
+      padding: 1rem;
+      font-size: 1.1rem;
+      border-radius: 0 0 12px 12px;
+      box-shadow: 0 4px 24px #00ffe722;
+      margin-bottom: 2rem;
+    }
+    select, button {
+      font-size: 1rem;
+      padding: 0.5em 1em;
+      border-radius: 8px;
+      border: none;
+      background: #232526;
+      color: #d4ff00;
+      outline: none;
+      box-shadow: 0 2px 8px #00ffe744;
+      transition: background 0.2s;
+    }
+    button:hover, select:hover {
+      background: #00ffe7;
+      color: #232526;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    Code Whisper
+    <span class="code-whisper-label"></span>
+  </div>
+  <div class="controls">
+    <label for="language">Language:</label>
+    <select id="language">
+      <option value="javascript">JavaScript</option>
+      <option value="python">Python</option>
+      <option value="java">Java</option>
+    </select>
+    <button id="runBtn">Run ▶️</button>
+  </div>
+  <div id="editor"></div>
+  <div class="output" id="output">Output will appear here...</div>
+
+  <button id="whisperBtn">Whisper</button>
+
+  <script>
+    var require = { paths: { 'vs': 'js/vs' } };
+  </script>
+  <script src="js/vs/loader.js"></script>
+  <script src="js/vs/editor/editor.main.nls.js"></script>
+  <script src="js/vs/editor/editor.main.js"></script>
+  <script>
+    let editor;
+    let defaultCode = {
+      javascript: `function greet(name) {
+  console.log('Hello, ' + name + '!');
+}
+greet('World');`,
+      python: `def greet(name):
+    print(f"Hello, {name}!")
+greet("World")`,
+      java: `public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello, World!");
+    }
+}`
+    };
+
+    require(['vs/editor/editor.main'], function () {
+      editor = monaco.editor.create(document.getElementById('editor'), {
+        value: defaultCode["javascript"],
+        language: "javascript",
+        theme: "vs-dark",
+        fontSize: 16,
+        minimap: { enabled: true },
+        automaticLayout: true,
+      });
+
+      document.getElementById('language').addEventListener('change', function(e) {
+        const lang = e.target.value;
+        monaco.editor.setModelLanguage(editor.getModel(), lang);
+        editor.setValue(defaultCode[lang]);
+      });
+
+      document.getElementById('runBtn').addEventListener('click', async function() {
+        const lang = document.getElementById('language').value;
+        const code = editor.getValue();
+        document.getElementById('output').textContent = "Running...";
+        // For JS, run in browser. For Python/Java, call an API.
+        if (lang === "javascript") {
+          const outputDiv = document.getElementById('output');
+          outputDiv.textContent = ''; // Clear previous output
+
+          const originalConsoleLog = console.log;
+          console.log = (...args) => {
+            outputDiv.textContent += args.join(' ') + '\\n';
+            originalConsoleLog(...args); // Still log to console as well
+          };
+
+          try {
+            eval(code);
+            if (outputDiv.textContent === '') {
+                outputDiv.textContent = 'Code ran successfully (no console output).';
+            }
+          } catch (e) {
+            outputDiv.textContent = 'Error: ' + e;
+          } finally {
+            console.log = originalConsoleLog; // Restore original console.log
+          }
+        } else {
+          // For Python/Java, send code to a code execution API (e.g., Judge0 or Piston)
+          const resp = await fetch('https://emkc.org/api/v2/piston/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              language: lang,
+              version: lang === 'python' ? '3.10' : '11', // Change Java version to 11
+              files: [
+                {
+                  content: code
+                }
+              ]
+            })
+          });
+          const data = await resp.json();
+// Fetch and log supported runtimes to help identify available Java versions
+    fetch('https://emkc.org/api/v2/piston/runtimes')
+      .then(response => response.json())
+      .then(runtimes => {
+        console.log('Supported Runtimes:', runtimes);
+      })
+      .catch(error => {
+        console.error('Error fetching runtimes:', error);
+      });
+          console.log('Piston API response data:', JSON.stringify(data, null, 2)); // Log the response data as a string
+          document.getElementById('output').textContent = data.message || data.run?.stdout || data.run?.stderr || "No output."; // Prioritize data.message and use optional chaining
+        }
+      });
+    });
+  </script>
+</body>
+</html>
